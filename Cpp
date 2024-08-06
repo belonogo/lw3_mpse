@@ -1,0 +1,63 @@
+#include <QCoreApplication>
+#include <QString>
+#include <QByteArray>
+#include <QDebug>
+#include <QCryptographicHash>
+#include "qaesencryption.h"
+
+QString generateSalt(int length) {
+    QByteArray salt;
+    for (int i = 0; i < length; ++i) {
+        salt.append(static_cast<char>(QRandomGenerator::global()->bounded(256)));
+    }
+    return QString::fromUtf8(salt.toHex());
+}
+
+QString encryptPassword(const QString &password, const QString &salt, const QByteArray &key) {
+    QByteArray combined = password.toUtf8() + QByteArray::fromHex(salt.toUtf8());
+
+    // Инициализация вектора (IV)
+    QByteArray iv = QAESEncryption::generateVector(QAESEncryption::AES_256);
+
+    QAESEncryption encryption(QAESEncryption::AES_256, QAESEncryption::ECB);
+    QByteArray encrypted = encryption.encode(combined, key, iv);
+
+    return iv.toHex() + ":" + encrypted.toHex();
+}
+
+QString decryptPassword(const QString &cipherText, const QString &salt, const QByteArray &key) {
+    QStringList parts = cipherText.split(':');
+    if (parts.size() != 2) {
+        qCritical() << "Invalid cipher text format";
+        return QString();
+    }
+
+    QByteArray iv = QByteArray::fromHex(parts[0].toUtf8());
+    QByteArray encryptedData = QByteArray::fromHex(parts[1].toUtf8());
+
+    QAESEncryption encryption(QAESEncryption::AES_256, QAESEncryption::ECB);
+    QByteArray decrypted = encryption.decode(encryptedData, key, iv);
+
+    QByteArray saltData = QByteArray::fromHex(salt.toUtf8());
+    QByteArray password = decrypted.left(decrypted.size() - saltData.size());
+    return QString::fromUtf8(password);
+}
+
+int main(int argc, char *argv[]) {
+    QCoreApplication a(argc, argv);
+
+    QString password = "my_secret_password";
+    QString salt = generateSalt(16);
+    QByteArray key = QCryptographicHash::hash("my_secret_key", QCryptographicHash::Sha256);
+
+    // Шифрование
+    QString encrypted = encryptPassword(password, salt, key);
+    qDebug() << "Salt:" << salt;
+    qDebug() << "Encrypted:" << encrypted;
+
+    // Дешифрование
+    QString decrypted = decryptPassword(encrypted, salt, key);
+    qDebug() << "Decrypted:" << decrypted;
+
+    return a.exec();
+}
